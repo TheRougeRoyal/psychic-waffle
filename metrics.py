@@ -1,7 +1,7 @@
 import numpy as np
 from typing import List, Dict
 
-def calculate_metrics(strategy_returns: List[float], close_prices: List[float], positions: List[int]) -> Dict[str, float]:
+def calculate_metrics(strategy_returns: List[float], close_prices: List[float], positions: List[int], risk_free_rate: float = 0.0) -> Dict[str, float]:
     """
     Calculates performance metrics for a trading strategy.
 
@@ -9,9 +9,7 @@ def calculate_metrics(strategy_returns: List[float], close_prices: List[float], 
         strategy_returns: List of daily log returns for the strategy.
         close_prices: List of closing prices for the asset.
         positions: List of positions (1 for long, -1 for short, 0 for flat).
-
-    Returns:
-        A dictionary containing key performance metrics.
+        risk_free_rate: Annual risk-free rate (e.g., 0.03 for 3%).
     """
     # Convert to numpy arrays for vectorization
     strat_ret = np.array(strategy_returns)
@@ -38,9 +36,10 @@ def calculate_metrics(strategy_returns: List[float], close_prices: List[float], 
     annualised_return = np.exp(np.mean(strat_ret) * 252) - 1
 
     # 4. Sharpe Ratio
-    # (Mean / Std) * sqrt(252). Assumes risk-free rate is 0.
+    # (mean_daily - rf_daily) / std * sqrt(252) where rf_daily = log(1 + risk_free_rate) / 252
+    rf_daily = np.log(1 + risk_free_rate) / 252
     std = np.std(strat_ret)
-    sharpe_ratio = (np.mean(strat_ret) / std * np.sqrt(252)) if std != 0 else 0.0
+    sharpe_ratio = ((np.mean(strat_ret) - rf_daily) / std * np.sqrt(252)) if std != 0 else 0.0
 
     # 5. Max Drawdown
     # Cumulative returns curve

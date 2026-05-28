@@ -129,6 +129,11 @@ def apply_bollinger_strategy(prices: List[float], window: int = 20, k: float = 2
                     current_pos = 1
                 elif price > upper and prev_price <= prev_upper:
                     current_pos = -1
+            else:  # i == window - 1, first bar with valid bands
+                if price < lower:
+                    current_pos = 1
+                elif price > upper:
+                    current_pos = -1
 
             pos = current_pos
 

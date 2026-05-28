@@ -52,7 +52,7 @@ async def sync(
             # Use .item() or float() on the series if it's a single value
             # but since we flattened the columns, row["Open"] should be a scalar
             records.append({
-                "date": date.strftime("%Y-%m-%dT%H:%M:%SZ"),
+                "date": date.strftime("%Y-%m-%d") if interval == "1d" else (date.tz_convert('UTC') if date.tz else date.tz_localize('UTC')).strftime("%Y-%m-%dT%H:%M:%SZ"),
                 "open": float(row["Open"]),
                 "high": float(row["High"]),
                 "low": float(row["Low"]),
