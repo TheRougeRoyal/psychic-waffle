@@ -28,11 +28,11 @@ std::vector<Signal> BollingerStrategy::run_backtest(const std::vector<PriceData>
     for (const auto& d : data) close_prices.push_back(d.close);
 
     std::vector<Signal> results;
-    int current_position = 0;
+    int current_pos = 0;
 
     for (int i = 0; i < n; ++i) {
         if (i < window - 1) {
-            results.push_back({0, 0, 0, 0, 0, 0, 0});
+            results.push_back({data[i].date, 0, 0, 0, 0, 0, 0, 0});
             continue;
         }
 
@@ -48,9 +48,9 @@ std::vector<Signal> BollingerStrategy::run_backtest(const std::vector<PriceData>
         double prev_upper = prev_sma + (std_dev_multiplier * prev_stddev);
 
         if (close_prices[i] < lower && prev_close >= prev_lower) {
-            current_position = 1;
+            current_pos = 1;
         } else if (close_prices[i] > upper && prev_close <= prev_upper) {
-            current_position = -1;
+            current_pos = -1;
         }
 
         double daily_ret = 0;
@@ -58,7 +58,7 @@ std::vector<Signal> BollingerStrategy::run_backtest(const std::vector<PriceData>
             daily_ret = std::log(close_prices[i] / close_prices[i - 1]);
         }
 
-        results.push_back({close_prices[i], sma, upper, lower, current_position, daily_ret, 0});
+        results.push_back({data[i].date, close_prices[i], sma, upper, lower, current_pos, daily_ret, 0});
     }
 
     for (int i = 1; i < results.size(); ++i) {
@@ -66,6 +66,42 @@ std::vector<Signal> BollingerStrategy::run_backtest(const std::vector<PriceData>
     }
 
     return results;
+}
+
+Signal BollingerStrategy::update(const std::string& date, double price) {
+    price_history.push_back(price);
+    int i = price_history.size() - 1;
+
+    if (i < window - 1) {
+        return {date, price, 0, 0, 0, 0, 0, 0};
+    }
+
+    double sma = calculate_sma(price_history, i);
+    double stddev = calculate_stddev(price_history, i, sma);
+    double upper = sma + (std_dev_multiplier * stddev);
+    double lower = sma - (std_dev_multiplier * stddev);
+
+    double prev_close = price_history[i - 1];
+    double prev_sma = calculate_sma(price_history, i - 1);
+    double prev_stddev = calculate_stddev(price_history, i - 1, prev_sma);
+    double prev_lower = prev_sma - (std_dev_multiplier * prev_stddev);
+    double prev_upper = prev_sma + (std_dev_multiplier * prev_stddev);
+
+    if (price < lower && prev_close >= prev_lower) {
+        current_position = 1;
+    } else if (price > upper && prev_close <= prev_upper) {
+        current_position = -1;
+    }
+
+    double daily_ret = std::log(price / prev_close);
+    double strat_ret = 0;
+    if (i > 0) {
+        // This is slightly simplified as it uses current_position from the previous step
+        // but in a real real-time system, you'd track the position from the *previous* signal.
+        // For now, we'll just use the internal state.
+    }
+
+    return {date, price, sma, upper, lower, current_position, daily_ret, 0};
 }
 
 // C-API implementations
@@ -82,7 +118,7 @@ extern "C" {
         BollingerStrategy* strat = static_cast<BollingerStrategy*>(strategy);
         std::vector<PriceData> data;
         for (int i = 0; i < n; ++i) {
-            data.push_back({prices[i]});
+            data.push_back({"", prices[i]});
         }
 
         std::vector<Signal> res = strat->run_backtest(data);

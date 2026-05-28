@@ -22,5 +22,6 @@ PYBIND11_MODULE(bb_strategy, m) {
 
     py::class_<BollingerStrategy>(m, "BollingerStrategy")
         .def(py::init<int, double>(), py::arg("window") = 20, py::arg("std_dev_multiplier") = 2.0)
-        .def("run_backtest", &BollingerStrategy::run_backtest);
+        .def("run_backtest", &BollingerStrategy::run_backtest)
+        .def("update", &BollingerStrategy::update);
 }

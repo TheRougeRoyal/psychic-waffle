@@ -1,94 +1,66 @@
-from typing import List, Dict, Tuple
-import httpx
+import yfinance as yf
 import asyncio
-import datetime
-
-timeout = 5
-headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36"}
-
-
-class YahooOHLC:
-    def __init__(
-        self,
-        instrument: str,
-        granularity: str,
-        since: datetime.datetime,
-        till: datetime.datetime = None,
-    ) -> None:
-
-        self.instrument = instrument
-        self.granularity = granularity.lower()
-        self.since = int(since.timestamp())
-
-        if till:
-            self.till = int(till.timestamp())
-        else:
-            self.till = int(datetime.datetime.now().timestamp())
-
-        if granularity not in [
-            "1m",
-            "2m",
-            "5m",
-            "15m",
-            "30m",
-            "60m",
-            "90m",
-            "1h",
-            "1d",
-            "5d",
-            "1wk",
-            "1mo",
-            "3mo",
-        ]:
-            raise Exception("Invalid granularity!")
-
-    @property
-    def url(self) -> str:
-        q = f"""https://query1.finance.yahoo.com/v8/finance/chart/{self.instrument}?symbol={self.instrument}&period1={self.since}&period2={self.till}&interval={self.granularity}&includePrePost=true&events=div%7Csplit%7Cearn&lang=en-US&region=US&crumb=t5QZMhgytYZ&corsDomain=finance.yahoo.com"""
-        return q
-
-    def normalize_data(
-        self, raw: dict
-    ) -> List[Tuple[str, float, float, float, float, float]]:
-        """normalize data"""
-        return [
-            (
-                datetime.datetime.fromtimestamp(raw["timestamp"][i]).strftime(
-                    "%Y-%m-%dT%H:%M:%SZ"
-                ),
-                raw["o"][i],
-                raw["h"][i],
-                raw["l"][i],
-                raw["c"][i],
-                raw["v"][i],
-            )
-            for i in range(len(raw["timestamp"]))
-        ]
-
+import pandas as pd
+from typing import List, Dict, Optional
+from datetime import datetime
 
 async def sync(
-    inst: str, granularity: str, since: datetime.datetime
-) -> List[Tuple[str, float, float, float, float, float]]:
+    ticker: str,
+    interval: str,
+    since: datetime,
+    till: Optional[datetime] = None
+) -> List[Dict]:
+    """
+    Fetches historical OHLCV data using the yfinance library.
 
-    yahoo = YahooOHLC(instrument=inst, granularity=granularity, since=since)
+    Args:
+        ticker: Ticker symbol (e.g., "AAPL").
+        interval: Data interval (e.g., "1d", "1h").
+        since: Start date as a datetime object.
+        till: End date as a datetime object (defaults to now).
 
-    async with httpx.AsyncClient() as client:
-        response = await client.get(yahoo.url, headers=headers, timeout=timeout)
+    Returns:
+        A list of dictionaries with keys: date, open, high, low, close, volume.
+    """
+    loop = asyncio.get_event_loop()
 
-    data = response.json()
-    if "chart" not in data or data["chart"].get("error"):
-        raise Exception(data.get("chart", {}).get("error", "Unknown Yahoo Finance error"))
+    try:
+        def fetch():
+            # Use yf.download with auto_adjust=True to get adjusted close as 'Close'
+            df = yf.download(
+                tickers=ticker,
+                start=since.strftime('%Y-%m-%d'),
+                end=till.strftime('%Y-%m-%d') if till else None,
+                interval=interval,
+                progress=False,
+                auto_adjust=True
+            )
+            return df
 
-    result = data["chart"]["result"][0]
-    record = yahoo.normalize_data(
-        {
-            "timestamp": result["timestamp"],
-            "o": result["indicators"]["quote"][0]["open"],
-            "h": result["indicators"]["quote"][0]["high"],
-            "l": result["indicators"]["quote"][0]["low"],
-            "c": result["indicators"]["quote"][0]["close"],
-            "v": result["indicators"]["quote"][0]["volume"],
-        }
-    )
+        df = await loop.run_in_executor(None, fetch)
 
-    return record
+        if df is None or df.empty:
+            raise ValueError(f"No data found for ticker '{ticker}'. It may be delisted or the ticker is invalid.")
+
+        # yfinance sometimes returns multi-index columns if only one ticker is passed
+        # we flatten them if necessary
+        if isinstance(df.columns, pd.MultiIndex):
+            df.columns = df.columns.get_level_values(0)
+
+        records = []
+        for date, row in df.iterrows():
+            # Use .item() or float() on the series if it's a single value
+            # but since we flattened the columns, row["Open"] should be a scalar
+            records.append({
+                "date": date.strftime("%Y-%m-%dT%H:%M:%SZ"),
+                "open": float(row["Open"]),
+                "high": float(row["High"]),
+                "low": float(row["Low"]),
+                "close": float(row["Close"]),
+                "volume": float(row["Volume"]),
+            })
+
+        return records
+
+    except Exception as e:
+        raise Exception(f"Error fetching data for {ticker}: {str(e)}")
