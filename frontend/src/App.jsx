@@ -6,6 +6,16 @@ import {
 
 const API_BASE = 'http://localhost:8000';
 
+const UpArrow = (props) => {
+  const { cx, cy } = props;
+  return <polygon points={`${cx-5},${cy+4} ${cx},${cy-4} ${cx+5},${cy+4}`} fill={props.fill || '#22c55e'} />;
+};
+
+const DownArrow = (props) => {
+  const { cx, cy } = props;
+  return <polygon points={`${cx-5},${cy-4} ${cx},${cy+4} ${cx+5},${cy-4}`} fill={props.fill || '#ef4444'} />;
+};
+
 const App = () => {
   // --- Control Panel State ---
   const [ticker, setTicker] = useState('AAPL');
@@ -24,10 +34,10 @@ const App = () => {
   const [isSearchOpen, setIsSearchOpen] = useState(false);
 
   // --- Result State ---
-  const [data, setData] = useState(null); // For single backtest results
+  const [data, setData] = useState(null);
   const [metrics, setMetrics] = useState(null);
   const [trades, setTrades] = useState([]);
-  const [compareData, setCompareData] = useState(null); // For /api/compare results
+  const [compareData, setCompareData] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isCached, setIsCached] = useState(false);
 
@@ -82,7 +92,6 @@ const App = () => {
         const json = await res.json();
         setCompareData(json);
 
-        // For Price/Drawdown charts, use the first selected strategy
         const firstStrat = selectedStrategies[0];
         if (firstStrat && json[firstStrat]) {
           setData(json[firstStrat].results);
@@ -148,16 +157,21 @@ const App = () => {
 
   const processedData = useMemo(() => buildChartData(data), [data, buildChartData]);
 
-  const compareChartData = useMemo(() => {
-    if (!compareData) return {};
-    const series = {};
-    Object.entries(compareData).forEach(([strat, val]) => {
-      series[strat] = buildChartData(val.results).map(d => ({
-        date: d.date,
-        equity: d.equity
-      }));
+  const compareEquityData = useMemo(() => {
+    if (!compareData) return [];
+    const strats = Object.keys(compareData);
+    if (strats.length === 0) return [];
+
+    const firstStratData = buildChartData(compareData[strats[0]].results);
+
+    return firstStratData.map((d, i) => {
+      const row = { date: d.date };
+      strats.forEach(strat => {
+        const stratProcessed = buildChartData(compareData[strat].results);
+        row[strat] = stratProcessed[i]?.equity || 0;
+      });
+      return row;
     });
-    return series;
   }, [compareData, buildChartData]);
 
   const getSignals = useCallback(() => {
@@ -176,7 +190,25 @@ const App = () => {
     if (!processedData.length) return;
     const headers = ['date', 'price', 'ma', 'upper_band', 'lower_band', 'position', 'equity', 'bnh', 'drawdown'];
     const rows = processedData.map(d => headers.map(h => d[h] !== undefined ? d[h] : '').join(','));
-    const csvContent = [headers.join(','), ...rows].join('\\n');
+    const csvContent = [headers.join(','), ...rows].join('\\n').replace(/\\\\n/g, '\\n');
+    // The prompt explicitly asks to fix '\\n' to '\n'.
+    // In a template string or double-quoted string in JS, \n is the newline character.
+    // The previous version used '\\n' which literalizes it.
+
+    // corrected version:
+    const finalCsv = [headers.join(','), ...rows].join('\\n'); // This is actually how you write it in the code if you want a literal newline in the resulting string
+    // Wait, the prompt says "change '\\n' to '\n'".
+    // In JS: 'a' + '\n' + 'b' is a newline. 'a' + '\\n' + 'b' is a literal backslash and n.
+
+    // Let's be precise for the final code.
+  }, [processedData, ticker, startDate, endDate]);
+
+  // Re-implementing handleExportCSV for the final version
+  const finalExportCSV = useCallback(() => {
+    if (!processedData.length) return;
+    const headers = ['date', 'price', 'ma', 'upper_band', 'lower_band', 'position', 'equity', 'bnh', 'drawdown'];
+    const rows = processedData.map(d => headers.map(h => d[h] !== undefined ? d[h] : '').join(','));
+    const csvContent = [headers.join(','), ...rows].join('\n');
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
@@ -374,7 +406,7 @@ const App = () => {
         <div style={{ marginBottom: '24px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
             <h3 style={{ margin: 0, fontSize: '16px', fontWeight: '600' }}>Performance Metrics</h3>
-            <button style={s.exportBtn} onClick={handleExportCSV}>Download CSV</button>
+            <button style={s.exportBtn} onClick={finalExportCSV}>Download CSV</button>
           </div>
           {renderMetrics()}
         </div>
@@ -395,8 +427,8 @@ const App = () => {
                   <Area type="monotone" dataKey="lower_band" stroke="none" fill="#fff" fillOpacity={1} />
                   <Line type="monotone" dataKey="price" stroke="#2563eb" strokeWidth={2} dot={false} />
                   <Line type="monotone" dataKey="ma" stroke="#94a3b8" strokeWidth={1} strokeDasharray="5 5" dot={false} />
-                  <Scatter data={buy} fill="#22c55e" shape="triangle" />
-                  <Scatter data={sell} fill="#ef4444" shape="triangle" />
+                  <Scatter data={buy} shape={<UpArrow fill="#22c55e" />} />
+                  <Scatter data={sell} shape={<DownArrow fill="#ef4444" />} />
                 </ComposedChart>
               </ResponsiveContainer>
             </div>
@@ -406,7 +438,7 @@ const App = () => {
             <h3 style={{ margin: '0 0 20px 0', fontSize: '16px', fontWeight: '600' }}>Equity Curve</h3>
             <div style={{ width: '100%', height: 400 }}>
               <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={compareMode ? processedData : processedData}>
+                <LineChart data={compareMode ? compareEquityData : processedData}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" vertical={false} />
                   <XAxis dataKey="date" stroke="#94a3b8" fontSize={11} />
                   <YAxis stroke="#94a3b8" fontSize={11} tickFormatter={v => `${((v - 1) * 100).toFixed(1)}%`} />
@@ -418,12 +450,11 @@ const App = () => {
                       <Line type="monotone" dataKey="bnh" stroke="#64748b" strokeWidth={1} strokeDasharray="5 5" dot={false} name="B&H" />
                     </>
                   ) : (
-                    Object.entries(compareChartData).map(([strat, color], idx) => (
+                    Object.entries(compareEquityData).map(([strat], idx) => (
                       <Line
                         key={strat}
                         type="monotone"
-                        data={compareChartData[strat]}
-                        dataKey="equity"
+                        dataKey={strat}
                         stroke={['#10b981', '#3b82f6', '#f59e0b'][idx % 3]}
                         strokeWidth={2}
                         dot={false}
