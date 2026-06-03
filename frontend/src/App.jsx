@@ -4,7 +4,7 @@ import {
   ReferenceLine, LineChart, AreaChart
 } from 'recharts';
 
-const API_BASE = 'http://localhost:8000';
+const API_BASE = '';
 
 const UpArrow = (props) => {
   const { cx, cy } = props;
