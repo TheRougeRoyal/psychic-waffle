@@ -174,6 +174,12 @@ const App = () => {
     });
   }, [compareData, buildChartData]);
 
+  const stratKeys = useMemo(() =>
+    compareEquityData.length > 0
+      ? Object.keys(compareEquityData[0]).filter(k => k !== 'date')
+      : []
+  , [compareEquityData]);
+
   const getSignals = useCallback(() => {
     if (!data) return { buy: [], sell: [] };
     const buy = [], sell = [];
@@ -187,24 +193,6 @@ const App = () => {
   const { buy, sell } = getSignals();
 
   const handleExportCSV = useCallback(() => {
-    if (!processedData.length) return;
-    const headers = ['date', 'price', 'ma', 'upper_band', 'lower_band', 'position', 'equity', 'bnh', 'drawdown'];
-    const rows = processedData.map(d => headers.map(h => d[h] !== undefined ? d[h] : '').join(','));
-    const csvContent = [headers.join(','), ...rows].join('\\n').replace(/\\\\n/g, '\\n');
-    // The prompt explicitly asks to fix '\\n' to '\n'.
-    // In a template string or double-quoted string in JS, \n is the newline character.
-    // The previous version used '\\n' which literalizes it.
-
-    // corrected version:
-    const finalCsv = [headers.join(','), ...rows].join('\\n'); // This is actually how you write it in the code if you want a literal newline in the resulting string
-    // Wait, the prompt says "change '\\n' to '\n'".
-    // In JS: 'a' + '\n' + 'b' is a newline. 'a' + '\\n' + 'b' is a literal backslash and n.
-
-    // Let's be precise for the final code.
-  }, [processedData, ticker, startDate, endDate]);
-
-  // Re-implementing handleExportCSV for the final version
-  const finalExportCSV = useCallback(() => {
     if (!processedData.length) return;
     const headers = ['date', 'price', 'ma', 'upper_band', 'lower_band', 'position', 'equity', 'bnh', 'drawdown'];
     const rows = processedData.map(d => headers.map(h => d[h] !== undefined ? d[h] : '').join(','));
@@ -406,7 +394,7 @@ const App = () => {
         <div style={{ marginBottom: '24px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
             <h3 style={{ margin: 0, fontSize: '16px', fontWeight: '600' }}>Performance Metrics</h3>
-            <button style={s.exportBtn} onClick={finalExportCSV}>Download CSV</button>
+            <button style={s.exportBtn} onClick={handleExportCSV}>Download CSV</button>
           </div>
           {renderMetrics()}
         </div>
@@ -450,7 +438,7 @@ const App = () => {
                       <Line type="monotone" dataKey="bnh" stroke="#64748b" strokeWidth={1} strokeDasharray="5 5" dot={false} name="B&H" />
                     </>
                   ) : (
-                    Object.entries(compareEquityData).map(([strat], idx) => (
+                    stratKeys.map((strat, idx) => (
                       <Line
                         key={strat}
                         type="monotone"
