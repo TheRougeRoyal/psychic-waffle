@@ -11,15 +11,6 @@ from metrics import calculate_metrics
 
 app = FastAPI()
 
-BACKTEST_CACHE = {}
-CACHE_TTL = 300
-
-def prune_cache():
-    now = datetime.now().timestamp()
-    to_delete = [k for k, v in BACKTEST_CACHE.items() if now - v["timestamp"] > CACHE_TTL]
-    for k in to_delete:
-        del BACKTEST_CACHE[k]
-
 def extract_trades(results: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     trades = []
     current_trade = None
@@ -138,24 +129,6 @@ class CompareRequest(BaseModel):
 @app.post("/api/backtest")
 async def backtest(request: BacktestRequest):
     try:
-        # Cache pruning
-        prune_cache()
-
-        # Cache key: (ticker, start_date, end_date, window, std_multiplier, strategy, risk_free_rate)
-        cache_key = (
-            request.ticker,
-            request.start_date,
-            request.end_date,
-            request.window,
-            request.std_multiplier,
-            request.strategy,
-            request.risk_free_rate
-        )
-
-        if cache_key in BACKTEST_CACHE:
-            cached_val = BACKTEST_CACHE[cache_key]["data"]
-            return {**cached_val, "cached": True}
-
         try:
             # Parse dates
             since = datetime.strptime(request.start_date, "%Y-%m-%d")
@@ -203,12 +176,6 @@ async def backtest(request: BacktestRequest):
             "results": results,
             "metrics": metrics,
             "trades": trades
-        }
-
-        # Store in cache
-        BACKTEST_CACHE[cache_key] = {
-            "timestamp": datetime.now().timestamp(),
-            "data": response
         }
 
         return response
