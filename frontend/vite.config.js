@@ -12,6 +12,7 @@ export default defineConfig({
     },
   },
   build: {
-    outDir: 'dist',
+    outDir: 'dist',        // outputs to frontend/dist (relative to this config)
+    emptyOutDir: true,
   },
 })
