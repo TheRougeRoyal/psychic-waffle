@@ -4,3 +4,5 @@ venv/
 *.so
 node_modules/
 bb_backtest
+.vercel
+.env*
