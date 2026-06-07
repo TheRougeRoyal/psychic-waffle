@@ -12,8 +12,11 @@ A high-performance backtesting web application for evaluating Bollinger Band tra
 ## Quick Start
 1. `git clone <repo-url>`
 2. `pip install -r requirements.txt`
-3. `cd frontend && npm install && npm run dev`
-4. `uvicorn main:app --reload`
+3. Copy `.env.example` to `.env` and set `SUPABASE_URL` and `SUPABASE_KEY`
+4. `cd frontend && npm install && npm run dev`
+5. `uvicorn main:app --reload`
+
+The app loads `.env` automatically at startup. If the Supabase values are missing, non-database endpoints still start normally; database routes only fail when they are called.
 
 ## Docker Deploy
 ```bash

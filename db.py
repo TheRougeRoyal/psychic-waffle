@@ -1,25 +1,59 @@
+from __future__ import annotations
+
+import importlib
 import os
-from supabase import create_client, Client
+from pathlib import Path
+from typing import Any
 
 # ---------------------------------------------------------------------------
-# Client initialisation — happens once at import time
+# Client initialisation — deferred until first database access
 # ---------------------------------------------------------------------------
 
-_url: str = os.environ.get("SUPABASE_URL", "")
-_key: str = os.environ.get("SUPABASE_KEY", "")
+def _load_env_file() -> None:
+    env_path = Path(__file__).resolve().with_name(".env")
+    if not env_path.exists():
+        return
 
-if not _url:
-    raise RuntimeError(
-        "Missing environment variable: SUPABASE_URL. "
-        "Set it to your Supabase project URL (https://<project>.supabase.co)."
-    )
-if not _key:
-    raise RuntimeError(
-        "Missing environment variable: SUPABASE_KEY. "
-        "Set it to your Supabase anon/service-role key."
-    )
+    for raw_line in env_path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if line.startswith("export "):
+            line = line[len("export "):].lstrip()
+        if "=" not in line:
+            continue
 
-supabase: Client = create_client(_url, _key)
+        key, value = line.split("=", 1)
+        key = key.strip()
+        value = value.strip()
+
+        if not key or key in os.environ:
+            continue
+
+        if (value.startswith('"') and value.endswith('"')) or (value.startswith("'") and value.endswith("'")):
+            value = value[1:-1]
+        elif " #" in value:
+            value = value.split(" #", 1)[0].rstrip()
+
+        os.environ[key] = value
+
+
+_load_env_file()
+
+_client: Any | None = None
+
+
+def get_client() -> Any:
+    global _client
+    if _client is None:
+        supabase_module = importlib.import_module("supabase")
+
+        url = os.environ.get("SUPABASE_URL", "")
+        key = os.environ.get("SUPABASE_KEY", "")
+        if not url or not key:
+            raise RuntimeError("SUPABASE_URL and SUPABASE_KEY must be set")
+        _client = supabase_module.create_client(url, key)
+    return _client
 
 
 # ---------------------------------------------------------------------------
@@ -51,14 +85,14 @@ def save_backtest(
         "total_return": total_return,
     }
 
-    response = supabase.table("saved_backtests").insert(row).execute()
+    response = get_client().table("saved_backtests").insert(row).execute()
     return response.data[0]
 
 
 def get_saved_backtests(limit: int = 20) -> list:
     """Return the *limit* most recent backtests ordered by created_at DESC."""
     response = (
-        supabase.table("saved_backtests")
+        get_client().table("saved_backtests")
         .select("id, created_at, ticker, strategy, start_date, end_date, total_return, metrics")
         .order("created_at", desc=True)
         .limit(limit)
@@ -70,7 +104,7 @@ def get_saved_backtests(limit: int = 20) -> list:
 def delete_backtest(id: str) -> bool:
     """Delete a backtest by id. Returns True if a row was deleted."""
     response = (
-        supabase.table("saved_backtests")
+        get_client().table("saved_backtests")
         .delete()
         .eq("id", id)
         .execute()
@@ -91,7 +125,7 @@ def add_to_watchlist(
     row = {"ticker": ticker, "name": name, "exchange": exchange}
 
     response = (
-        supabase.table("watchlist")
+        get_client().table("watchlist")
         .upsert(row, on_conflict="ticker")
         .execute()
     )
@@ -101,7 +135,7 @@ def add_to_watchlist(
 def get_watchlist() -> list:
     """Return all watchlist rows ordered by created_at DESC."""
     response = (
-        supabase.table("watchlist")
+        get_client().table("watchlist")
         .select("*")
         .order("created_at", desc=True)
         .execute()
@@ -112,7 +146,7 @@ def get_watchlist() -> list:
 def remove_from_watchlist(ticker: str) -> bool:
     """Delete a ticker from the watchlist. Returns True if a row was deleted."""
     response = (
-        supabase.table("watchlist")
+        get_client().table("watchlist")
         .delete()
         .eq("ticker", ticker)
         .execute()
