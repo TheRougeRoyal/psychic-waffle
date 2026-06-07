@@ -41,6 +41,14 @@ const App = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [isCached, setIsCached] = useState(false);
 
+  // --- Save backtest state ---
+  const [saveStatus, setSaveStatus] = useState(null); // null | 'saved' | 'error'
+
+  // --- Saved backtests drawer state ---
+  const [showSavedDrawer, setShowSavedDrawer] = useState(false);
+  const [savedBacktests, setSavedBacktests] = useState([]);
+  const [savedLoading, setSavedLoading] = useState(false);
+
   // --- Debounced Search ---
   useEffect(() => {
     if (!searchQuery) {
@@ -206,6 +214,74 @@ const App = () => {
     URL.revokeObjectURL(url);
   }, [processedData, ticker, startDate, endDate]);
 
+  // --- Save backtest ---
+  const handleSaveBacktest = useCallback(async () => {
+    if (!metrics) return;
+    try {
+      const res = await fetch(`${API_BASE}/api/backtests/save`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ticker,
+          strategy,
+          start_date: startDate,
+          end_date: endDate,
+          window,
+          std_multiplier: stdMultiplier,
+          risk_free_rate: parseFloat(riskFreeRate),
+          metrics,
+        }),
+      });
+      if (!res.ok) throw new Error('Save failed');
+      setSaveStatus('saved');
+    } catch (e) {
+      setSaveStatus('error');
+    } finally {
+      setTimeout(() => setSaveStatus(null), 3000);
+    }
+  }, [ticker, strategy, startDate, endDate, window, stdMultiplier, riskFreeRate, metrics]);
+
+  // --- Saved backtests drawer ---
+  const fetchSavedBacktests = useCallback(async () => {
+    setSavedLoading(true);
+    try {
+      const res = await fetch(`${API_BASE}/api/backtests`);
+      const json = await res.json();
+      setSavedBacktests(json.results || []);
+    } catch (e) {
+      setSavedBacktests([]);
+    } finally {
+      setSavedLoading(false);
+    }
+  }, []);
+
+  const handleToggleSavedDrawer = useCallback(() => {
+    setShowSavedDrawer(prev => {
+      const next = !prev;
+      if (next) fetchSavedBacktests();
+      return next;
+    });
+  }, [fetchSavedBacktests]);
+
+  const handleDeleteSaved = useCallback(async (id) => {
+    try {
+      await fetch(`${API_BASE}/api/backtests/${id}`, { method: 'DELETE' });
+      setSavedBacktests(prev => prev.filter(b => b.id !== id));
+    } catch (e) {
+      // silently ignore
+    }
+  }, []);
+
+  const handleLoadSaved = useCallback((backtest) => {
+    setTicker(backtest.ticker);
+    setStrategy(backtest.strategy);
+    setStartDate(backtest.start_date);
+    if (backtest.end_date) setEndDate(backtest.end_date);
+    setShowSavedDrawer(false);
+    // Run automatically after state settles
+    setTimeout(() => handleRunBacktest(), 50);
+  }, []);  // handleRunBacktest intentionally omitted — called via timeout to get fresh state
+
   // --- Inline Styles ---
   const s = {
     container: { fontFamily: 'Inter, system-ui, sans-serif', backgroundColor: '#f8fafc', color: '#1e293b', minHeight: '100vh', padding: '24px', boxSizing: 'border-box' },
@@ -235,7 +311,12 @@ const App = () => {
       padding: '2px 6px', borderRadius: '4px', fontSize: '10px', fontWeight: '700',
       backgroundColor: dir === 'long' ? '#dcfce7' : '#fee2e2',
       color: dir === 'long' ? '#166534' : '#991b1b'
-    })
+    }),
+    savedBtn: { padding: '6px 14px', backgroundColor: '#0f172a', color: 'white', border: 'none', borderRadius: '6px', fontSize: '13px', fontWeight: '600', cursor: 'pointer' },
+    saveBacktestBtn: { padding: '6px 12px', backgroundColor: '#10b981', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' },
+    saveErrorBtn: { padding: '6px 12px', backgroundColor: '#ef4444', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'default' },
+    drawerCard: { backgroundColor: '#fff', borderRadius: '12px', border: '1px solid #e2e8f0', padding: '20px', boxShadow: '0 1px 3px 0 rgb(0 0 0 / 0.1)', marginBottom: '24px' },
+    actionBtn: (color) => ({ padding: '4px 10px', backgroundColor: color, color: 'white', border: 'none', borderRadius: '4px', fontSize: '12px', fontWeight: '600', cursor: 'pointer', marginRight: '6px' }),
   };
 
   const renderMetrics = () => {
@@ -310,7 +391,10 @@ const App = () => {
       <div style={s.card}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
           <h2 style={{ margin: 0, fontSize: '20px', fontWeight: '700' }}>Backtest Configuration</h2>
-          <div style={{ display: 'flex', alignItems: 'center' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <button style={s.savedBtn} onClick={handleToggleSavedDrawer}>
+              {showSavedDrawer ? 'Hide Saved' : 'Saved'}
+            </button>
             <span style={{ fontWeight: '600' }}>{ticker}</span>
             {isCached && <span style={s.badge}>CACHED</span>}
           </div>
@@ -390,11 +474,69 @@ const App = () => {
         </div>
       </div>
 
+      {/* --- Saved Backtests Drawer --- */}
+      {showSavedDrawer && (
+        <div style={s.drawerCard}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+            <h3 style={{ margin: 0, fontSize: '16px', fontWeight: '600' }}>Saved Backtests</h3>
+            <button style={{ ...s.exportBtn, fontSize: '13px' }} onClick={fetchSavedBacktests}>↺ Refresh</button>
+          </div>
+          {savedLoading ? (
+            <div style={{ textAlign: 'center', padding: '32px', color: '#64748b', fontSize: '14px' }}>
+              <div style={{ display: 'inline-block', width: '20px', height: '20px', border: '2px solid #e2e8f0', borderTopColor: '#2563eb', borderRadius: '50%', animation: 'spin 0.7s linear infinite', marginRight: '8px', verticalAlign: 'middle' }} />
+              Loading...
+              <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+            </div>
+          ) : savedBacktests.length === 0 ? (
+            <div style={{ textAlign: 'center', padding: '32px', color: '#94a3b8', fontSize: '14px' }}>No saved backtests yet.</div>
+          ) : (
+            <div style={{ overflowX: 'auto' }}>
+              <table style={s.table}>
+                <thead>
+                  <tr>
+                    <th style={s.th}>Date</th>
+                    <th style={s.th}>Ticker</th>
+                    <th style={s.th}>Strategy</th>
+                    <th style={s.th}>Return %</th>
+                    <th style={s.th}>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {savedBacktests.map(b => (
+                    <tr key={b.id}>
+                      <td style={s.td}>{new Date(b.created_at).toLocaleDateString()}</td>
+                      <td style={{ ...s.td, fontWeight: '600' }}>{b.ticker}</td>
+                      <td style={s.td}>{b.strategy}</td>
+                      <td style={{ ...s.td, color: b.total_return >= 0 ? '#16a34a' : '#dc2626', fontWeight: '600' }}>
+                        {b.total_return != null ? `${(b.total_return * 100).toFixed(2)}%` : '—'}
+                      </td>
+                      <td style={s.td}>
+                        <button style={s.actionBtn('#2563eb')} onClick={() => handleLoadSaved(b)}>Load</button>
+                        <button style={s.actionBtn('#ef4444')} onClick={() => handleDeleteSaved(b.id)}>Delete</button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
       {metrics || compareData ? (
         <div style={{ marginBottom: '24px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
             <h3 style={{ margin: 0, fontSize: '16px', fontWeight: '600' }}>Performance Metrics</h3>
-            <button style={s.exportBtn} onClick={handleExportCSV}>Download CSV</button>
+            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+              <button style={s.exportBtn} onClick={handleExportCSV}>Download CSV</button>
+              {saveStatus === 'saved' ? (
+                <span style={{ ...s.saveBacktestBtn, opacity: 1, cursor: 'default' }}>Saved ✓</span>
+              ) : saveStatus === 'error' ? (
+                <span style={s.saveErrorBtn}>Save failed</span>
+              ) : (
+                <button style={s.saveBacktestBtn} onClick={handleSaveBacktest}>Save backtest</button>
+              )}
+            </div>
           </div>
           {renderMetrics()}
         </div>

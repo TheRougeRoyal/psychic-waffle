@@ -1,4 +1,5 @@
 from fastapi import FastAPI, HTTPException
+from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field, model_validator
 from typing import Optional, Literal, List, Dict, Any
 from datetime import datetime
@@ -8,6 +9,7 @@ from data_fetcher import sync
 from bollinger_strategy import apply_bollinger_strategy
 from strategy import apply_rsi_strategy, apply_sma_cross_strategy
 from metrics import calculate_metrics
+import db
 
 app = FastAPI()
 
@@ -277,3 +279,93 @@ async def search_ticker(q: str):
 
     except Exception:
         return fallback_list
+
+
+# ---------------------------------------------------------------------------
+# Pydantic models for new endpoints
+# ---------------------------------------------------------------------------
+
+class SaveBacktestRequest(BaseModel):
+    ticker: str
+    strategy: str
+    start_date: str
+    end_date: Optional[str] = None
+    window: Optional[int] = None
+    std_multiplier: Optional[float] = None
+    risk_free_rate: Optional[float] = None
+    metrics: Optional[Dict[str, Any]] = None
+
+
+class WatchlistRequest(BaseModel):
+    ticker: str
+    name: Optional[str] = None
+    exchange: Optional[str] = None
+
+
+# ---------------------------------------------------------------------------
+# saved_backtests endpoints
+# ---------------------------------------------------------------------------
+
+@app.post("/api/backtests/save")
+async def save_backtest(request: SaveBacktestRequest):
+    try:
+        row = await run_in_threadpool(
+            db.save_backtest,
+            request.ticker,
+            request.strategy,
+            request.start_date,
+            request.end_date,
+            request.window,
+            request.std_multiplier,
+            request.risk_free_rate,
+            request.metrics,
+        )
+        return row
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/backtests")
+async def list_backtests():
+    results = await run_in_threadpool(db.get_saved_backtests, 20)
+    return {"results": results}
+
+
+@app.delete("/api/backtests/{id}")
+async def delete_backtest(id: str):
+    deleted = await run_in_threadpool(db.delete_backtest, id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Backtest not found")
+    return {"deleted": True}
+
+
+# ---------------------------------------------------------------------------
+# watchlist endpoints
+# ---------------------------------------------------------------------------
+
+@app.get("/api/watchlist")
+async def list_watchlist():
+    results = await run_in_threadpool(db.get_watchlist)
+    return {"results": results}
+
+
+@app.post("/api/watchlist")
+async def add_watchlist(request: WatchlistRequest):
+    try:
+        row = await run_in_threadpool(
+            db.add_to_watchlist,
+            request.ticker,
+            request.name,
+            request.exchange,
+        )
+        return row
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/api/watchlist/{ticker}")
+async def remove_watchlist(ticker: str):
+    deleted = await run_in_threadpool(db.remove_from_watchlist, ticker)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Ticker not found in watchlist")
+    return {"deleted": True}
