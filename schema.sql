@@ -1,9 +1,3 @@
--- ============================================================
--- Backtesting App Schema
--- Paste into Supabase SQL Editor and run
--- ============================================================
-
--- 1. saved_backtests
 CREATE TABLE IF NOT EXISTS saved_backtests (
     id               uuid          PRIMARY KEY DEFAULT gen_random_uuid(),
     created_at       timestamptz   NOT NULL DEFAULT now(),
@@ -24,16 +18,17 @@ CREATE INDEX IF NOT EXISTS idx_saved_backtests_ticker
 CREATE INDEX IF NOT EXISTS idx_saved_backtests_created_at
     ON saved_backtests (created_at DESC);
 
--- 2. watchlist
+
 CREATE TABLE IF NOT EXISTS watchlist (
     id          uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
     created_at  timestamptz NOT NULL DEFAULT now(),
     ticker      text        NOT NULL UNIQUE,
+
     name        text,
     exchange    text
 );
 
--- 3. alerts
+
 CREATE TABLE IF NOT EXISTS alerts (
     id            uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
     created_at    timestamptz NOT NULL DEFAULT now(),

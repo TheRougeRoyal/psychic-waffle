@@ -1,5 +1,6 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.concurrency import run_in_threadpool
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field, model_validator
 from typing import Optional, Literal, List, Dict, Any
 from datetime import datetime
@@ -12,6 +13,14 @@ from metrics import calculate_metrics
 import db
 
 app = FastAPI()
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 def extract_trades(results: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     trades = []
